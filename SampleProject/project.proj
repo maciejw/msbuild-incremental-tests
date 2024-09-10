@@ -1,0 +1,45 @@
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <UsingTask TaskName="RunCompiler"
+    AssemblyFile="$(MsBuildThisFileDirectory)..\RunCompiler\bin\Debug\net8.0\RunCompiler.dll" />
+
+  <PropertyGroup>
+    <OutDir>bin</OutDir>
+    <!-- Define the compiler -->
+    <CompilerPath>$(MsBuildThisFileDirectory)compiler.ps1</CompilerPath>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Define the source files -->
+    <SourceFiles Include="**\*.cs" />
+  </ItemGroup>
+
+  <!-- Target to detect changed files, with a unique marker file for each input -->
+  <Target Name="DetectChangedFiles"
+    Inputs="@(SourceFiles)" Outputs="@(SourceFiles -> '%(Filename).dummy')">
+    <!-- Collect changed files into a separate ItemGroup -->
+    <ItemGroup>
+      <ChangedFiles Include="@(SourceFiles)" />
+    </ItemGroup>
+  </Target>
+
+  <!-- Target to compile only the changed files without batching -->
+  <Target Name="CompileChangedFiles" DependsOnTargets="DetectChangedFiles"
+    Inputs="@(ChangedFiles)" Outputs="@(ChangedFiles -> '$(OutDir)\%(Filename).dll')">
+    <!-- Ensure the OutDir directory exists -->
+    <MakeDir Directories="$(OutDir)" />
+
+    <!-- Clear output files -->
+    <Delete Files="@(ChangedFiles -> '$(OutDir)\%(Filename).dll')" />
+
+    <!-- Only compile if there are changed files -->
+    <RunCompiler OutputDirectory="$(OutDir)" InputFiles="@(ChangedFiles)"
+      CompilerPath="$(CompilerPath)">
+      <Output TaskParameter="Output" ItemName="CompilerOutput" />
+      <Output TaskParameter="Errors" ItemName="CompilerErrors" />
+    </RunCompiler>
+
+    <Message Text="Output: %(CompilerOutput.Identity)" />
+    <Error Text="%(CompilerErrors.Identity)" Condition="@(CompilerErrors->Count()) &gt; '0'"  />
+  </Target>
+
+</Project>
