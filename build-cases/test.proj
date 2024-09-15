@@ -1,0 +1,82 @@
+<Project>
+    <Target Name="OutputOnly" Outputs="a.file">
+        <!-- always executes because there is no inputs -->
+        <Touch Files="a.file" AlwaysCreate="true" />
+    </Target>
+    <Target Name="IncrementalOneToOneNoBatching" Inputs="a.file" Outputs="b.file">
+        <!-- executes only if a is newer than b -->
+        <Touch Files="b.file" AlwaysCreate="true" />
+    </Target>
+    <ItemGroup>
+        <IncrementalManyToOneWithBatchingInput Include="a.file" />
+        <IncrementalManyToOneWithBatchingInput Include="b.file" />
+    </ItemGroup>
+    <Target Name="IncrementalManyToOneWithBatching"
+        Inputs="@(IncrementalManyToOneWithBatchingInput)" Outputs="c.file">
+        <!-- always executes because there is no inputs -->
+        <Message Text="%(IncrementalManyToOneWithBatchingInput.Identity)" />
+        <Touch Files="c.file" AlwaysCreate="true" />
+    </Target>
+    <ItemGroup>
+        <Headers Include="Header1.h;Header2.h" />
+        <Sources Include="Source1.c;Source2.c" />
+    </ItemGroup>
+    <ItemGroup>
+        <HeadersByHand Include="Header1.h">
+            <Source>Source1.c</Source>
+        </HeadersByHand>
+        <HeadersByHand Include="Header1.h">
+            <Source>Source2.c</Source>
+        </HeadersByHand>
+        <HeadersByHand Include="Header2.h">
+            <Source>Source1.c</Source>
+        </HeadersByHand>
+    </ItemGroup>
+
+    <ItemGroup>
+        <SourcesByHand Include="Source1.c">
+            <Header>Header1.h</Header>
+        </SourcesByHand>
+        <SourcesByHand Include="Source1.c">
+            <Header>Header2.h</Header>
+        </SourcesByHand>
+        <SourcesByHand Include="Source2.c">
+            <Header>Header1.h</Header>
+        </SourcesByHand>
+    </ItemGroup>
+
+    <Target Name="PreMultipleInputsNoLinkingThroughMetadata">
+        <ItemGroup>
+            <!-- Cross join Sources and Headers -->
+            <CompileCombination Include="@(Sources)">
+                <Header>%(Headers.Identity)</Header>
+            </CompileCombination>
+        </ItemGroup>
+    </Target>
+    <Target Name="TestBatching1"
+        Inputs="@(SourcesByHand)"
+        Outputs="%(SourcesByHand.Identity).dummy"
+    >
+    <ItemGroup>
+        <_Headers Include="%(SourcesByHand.Header)" />
+    </ItemGroup>
+        <Message Text="@(_Headers)" />
+    </Target>
+
+    <Target Name="TestBatching2"
+        Inputs="@(HeadersByHand)"
+        Outputs="%(HeadersByHand.Identity).dummy"
+    >
+        <ItemGroup>
+            <_Sources Include="%(HeadersByHand.Source)" />
+        </ItemGroup>
+        <Message Text="Compiling @(_Sources)" />
+    </Target>
+    <Target Name="MultipleInputsNoLinkingThroughMetadata"
+        Inputs="@(CompileCombination)"
+        Outputs="%(CompileCombination.Identity).obj"
+        DependsOnTargets="PreMultipleInputsNoLinkingThroughMetadata">
+        <Message
+            Text="Compiling %(CompileCombination.Identity) with header %(CompileCombination.Header)" />
+    </Target>
+</Project>

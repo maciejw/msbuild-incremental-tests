@@ -1,0 +1,16 @@
+{
+    "[xml]": {
+        "editor.defaultFormatter": "redhat.vscode-xml",
+        "editor.tabSize": 2
+    },
+    "[msbuild]": {
+        "editor.defaultFormatter": "redhat.vscode-xml"
+    },
+    "files.associations": {
+        "*.proj": "msbuild"
+    },
+    "files.autoSave": "afterDelay",
+    "cSpell.enableFiletypes": [
+        "msbuild"
+    ]
+}

@@ -1,24 +1,28 @@
 param(
-    [Parameter()]    
+    [Parameter()]
     [string]
-    $outDir,
-    [Parameter(ValueFromRemainingArguments = $true)]
-    [string[]]
-    $files
+    $OutputDirectory,
+    [Parameter()]
+    $SourceFiles,
+    [Parameter()]
+    $IncludeFiles
 )
-Write-Host "Outdir: $outDir"
+Write-Verbose "OutputDirectory: $OutputDirectory"
 
-$files | ForEach-Object {
-    Write-Host "File: $_"
-}
-$files | ForEach-Object {
+Write-Verbose "SourceFiles"
+$SourceFiles | Out-String | Write-Verbose
+
+Write-Verbose "IncludeFiles"
+$IncludeFiles | Out-String | Write-Verbose
+
+$SourceFiles | ForEach-Object {
     $file = Get-Item $_
     $content = Get-Content $file
-    Write-Host "Compiling $file"
+    Write-Verbose "Compiling $file"
     if ($content -match "error") {
-        [Console]::Error.WriteLine("ERROR;File=$file")
+        Write-Error "ERROR;File=$file"
     } else {
         Write-Output "SUCCESS:File=$file"
-        Copy-Item "$file" "$outDir\$($file.BaseName).dll"
+        Copy-Item "$file" "$OutputDirectory\$($file.BaseName).dll"
     }
 }

@@ -1,45 +1,169 @@
-<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+<Project DefaultTargets="Main" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+
   <UsingTask TaskName="RunCompiler"
-    AssemblyFile="$(MsBuildThisFileDirectory)..\RunCompiler\bin\Debug\net8.0\RunCompiler.dll" />
+    AssemblyFile="$(MsBuildThisFileDirectory)..\out\publish\RunCompiler.dll" />
+  <UsingTask TaskName="RunAnalyzer"
+    AssemblyFile="$(MsBuildThisFileDirectory)..\out\publish\RunCompiler.dll" />
 
   <PropertyGroup>
-    <OutDir>bin</OutDir>
+    <OutDir>bin\</OutDir>
+    <IntermediateDir>obj\</IntermediateDir>
     <!-- Define the compiler -->
+    <AnalyzerPath>$(MsBuildThisFileDirectory)analyzer.ps1</AnalyzerPath>
     <CompilerPath>$(MsBuildThisFileDirectory)compiler.ps1</CompilerPath>
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- Define the source files -->
-    <SourceFiles Include="**\*.cs" />
+    <SourceFiles Include="**\*.source" Exclude="obj\**" />
+    <IncludeFiles Include="**\*.include" Exclude="obj\**" />
   </ItemGroup>
 
-  <!-- Target to detect changed files, with a unique marker file for each input -->
-  <Target Name="DetectChangedFiles"
-    Inputs="@(SourceFiles)" Outputs="@(SourceFiles -> '%(Filename).dummy')">
-    <!-- Collect changed files into a separate ItemGroup -->
+  <!-- Analyze level start -->
+
+  <Target Name="InitializeIntermediateDir">
     <ItemGroup>
-      <ChangedFiles Include="@(SourceFiles)" />
+      <_SourceDirectories Include="$(IntermediateDir)dependencies\%(SourceFiles.RecursiveDir)" />
+      <_IncludeDirectories Include="$(IntermediateDir)%(IncludeFiles.RecursiveDir)" />
     </ItemGroup>
+
+    <MakeDir Directories="$(IntermediateDir)" Condition="!exists($(IntermediateDir))" />
+    <MakeDir Directories="@(_SourceDirectories)" Condition="!exists(@(_SourceDirectories))" />
+    <MakeDir Directories="@(_IncludeDirectories)" Condition="!exists(@(_IncludeDirectories))" />
   </Target>
 
-  <!-- Target to compile only the changed files without batching -->
-  <Target Name="CompileChangedFiles" DependsOnTargets="DetectChangedFiles"
-    Inputs="@(ChangedFiles)" Outputs="@(ChangedFiles -> '$(OutDir)\%(Filename).dll')">
-    <!-- Ensure the OutDir directory exists -->
-    <MakeDir Directories="$(OutDir)" />
+  <Target Name="AnalyzeFileDependencies"
+    Inputs="@(SourceFiles)"
+    Outputs="@(SourceFiles -> '$(IntermediateDir)dependencies\%(Identity).props')"
+    DependsOnTargets="InitializeIntermediateDir"
+  >
 
-    <!-- Clear output files -->
-    <Delete Files="@(ChangedFiles -> '$(OutDir)\%(Filename).dll')" />
+    <ItemGroup>
+      <_SourcesModified Include="%(SourceFiles.Identity)" />
+    </ItemGroup>
 
-    <!-- Only compile if there are changed files -->
-    <RunCompiler OutputDirectory="$(OutDir)" InputFiles="@(ChangedFiles)"
-      CompilerPath="$(CompilerPath)">
-      <Output TaskParameter="Output" ItemName="CompilerOutput" />
-      <Output TaskParameter="Errors" ItemName="CompilerErrors" />
-    </RunCompiler>
-
-    <Message Text="Output: %(CompilerOutput.Identity)" />
-    <Error Text="%(CompilerErrors.Identity)" Condition="@(CompilerErrors->Count()) &gt; '0'"  />
+    <RunAnalyzer
+      AnalyzerPath="$(AnalyzerPath)"
+      SourceFiles="@(_SourcesModified)"
+      IncludeFiles="@(IncludeFiles)"
+    >
+      <Output TaskParameter="SourceFilesWithDependents" ItemName="SourceFilesWithDependents" />
+    </RunAnalyzer>
   </Target>
 
+  <Target Name="GenerateProps"
+    Inputs="@(SourceFilesWithDependents)"
+    Outputs="$(IntermediateDir)dependencies\%(SourceFilesWithDependents.Identity).props"
+    DependsOnTargets="AnalyzeFileDependencies"
+  >
+    <ItemGroup>
+      <_SourceDependency Include="%(SourceFilesWithDependents.SourceDependency)">
+        <Source>%(SourceFilesWithDependents.Identity)</Source>
+      </_SourceDependency>
+    </ItemGroup>
+
+    <ItemGroup>
+      <Line Include="Start">
+        <Code><![CDATA[
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+]]></Code>
+      </Line>
+      <Line Include="%(_SourceDependency.Identity)">
+        <Code><![CDATA[
+    <SourceDependency Include="%(_SourceDependency.Identity)">
+      <Source>%(_SourceDependency.Source)</Source>
+    </SourceDependency>
+]]></Code>
+      </Line>
+      <Line Include="End">
+        <Code><![CDATA[
+  </ItemGroup>
+</Project>
+]]></Code>
+      </Line>
+
+    </ItemGroup>
+    <ItemGroup>
+      <Code Include="%(Line.Code)" />
+    </ItemGroup>
+    <WriteLinesToFile
+      File="$(IntermediateDir)dependencies\%(SourceFilesWithDependents.Identity).props"
+      Lines="@(Code)"
+      Overwrite="true"
+    />
+  </Target>
+
+  <Target Name="AnalyzeSourceDependenciesInternal" DependsOnTargets="GenerateProps">
+  </Target>
+
+
+  <!-- Compilation level start -->
+
+  <Target Name="InitializeOutDir">
+    <MakeDir Directories="$(OutDir)" Condition="!exists($(OutDir))" />
+  </Target>
+
+  <Target Name="InvalidateSourcesWhenIncudesAreChanged"
+    Inputs="@(SourceDependency)"
+    Outputs="$(IntermediateDir)%(SourceDependency.Identity).marker"
+    DependsOnTargets="InitializeOutDir"
+  >
+    <ItemGroup>
+      <_SourcesToRecompile Include="%(SourceDependency.Source)" />
+    </ItemGroup>
+
+    <Touch Files="@(_SourcesToRecompile)" />
+    <Touch Files="$(IntermediateDir)%(IncludeFiles.Identity).marker"
+      AlwaysCreate="true" />
+  </Target>
+
+  <PropertyGroup>
+    <RunCompilerDependsOn>
+      InitializeOutDir;
+      InvalidateSourcesWhenIncudesAreChanged
+    </RunCompilerDependsOn>
+  </PropertyGroup>
+
+  <Import Project="$(IntermediateDir)dependencies\**\*.props" Condition="'$(CompileSource)' == 'true'" />
+
+  <Target Name="RunCompiler" DependsOnTargets="$(RunCompilerDependsOn)"
+    Inputs="@(SourceFiles)"
+    Outputs="@(SourceFiles -> '$(OutDir)%(Filename).dll')">
+
+    <RunCompiler
+      CompilerPath="$(CompilerPath)"
+      OutputDirectory="$(OutDir)"
+      SourceFiles="@(SourceFiles)"
+      IncludeFiles="@(IncludeFiles)"
+    />
+  </Target>
+
+  <Target Name="CompileSourceInternal" DependsOnTargets="RunCompiler">
+  </Target>
+
+  <!-- Root level start-->
+
+  <Target Name="Clean">
+    <RemoveDir Directories="$(IntermediateDir)" />
+    <RemoveDir Directories="$(OutDir)" />
+  </Target>
+
+  <Target Name="AnalyzeSourceDependencies">
+    <MSBuild Projects="$(MsBuildThisFile)"
+      Targets="AnalyzeSourceDependenciesInternal"
+      Properties="AnalyzeSourceDependencies=true">
+      <Output ItemName="CompileOutputs" TaskParameter="TargetOutputs" />
+    </MSBuild>
+  </Target>
+
+  <Target Name="CompileSource">
+    <MSBuild Projects="$(MsBuildThisFile)"
+      Targets="CompileSourceInternal"
+      Properties="CompileSource=true">
+      <Output ItemName="CompileOutputs" TaskParameter="TargetOutputs" />
+    </MSBuild>
+  </Target>
+
+  <Target Name="Main" DependsOnTargets="AnalyzeSourceDependencies;CompileSource">
+  </Target>
 </Project>

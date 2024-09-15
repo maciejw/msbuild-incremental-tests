@@ -1,0 +1,12 @@
+{
+    "recommendations": [
+        "ms-dotnettools.csharp",
+        "ms-dotnettools.csdevkit",
+        "ms-dotnettools.vscodeintellicode-csharp",
+        "ms-dotnettools.vscode-dotnet-runtime",
+        "ms-vscode.powershell",
+        "streetsidesoftware.code-spell-checker",
+        "tintoy.msbuild-project-tools",
+        "redhat.vscode-xml"
+    ]
+}

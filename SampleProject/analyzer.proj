@@ -1,0 +1,89 @@
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <UsingTask TaskName="RunAnalyzer"
+    AssemblyFile="$(MsBuildThisFileDirectory)..\out\publish\RunCompiler.dll" />
+
+  <PropertyGroup>
+    <IntermediateDir>obj\</IntermediateDir>
+    <!-- Define the compiler -->
+    <AnalyzerPath>$(MsBuildThisFileDirectory)analyzer.ps1</AnalyzerPath>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Define the source files -->
+    <SourceFiles Include="**\*.source" Exclude="obj\**" />
+    <IncludeFiles Include="**\*.include" Exclude="obj\**" />
+  </ItemGroup>
+
+  <Target Name="Initlilize">
+    <ItemGroup>
+        <_SourceDirectories Include="$(IntermediateDir)%(SourceFiles.RecursiveDir)" />
+        <_IncludeDirectories Include="$(IntermediateDir)%(IncludeFiles.RecursiveDir)" />
+    </ItemGroup>
+    
+    <MakeDir Directories="$(IntermediateDir)" Condition="!exists($(IntermediateDir))" />
+    <MakeDir Directories="@(_SourceDirectories)" Condition="!exists(@(_SourceDirectories))" />
+    <MakeDir Directories="@(_IncludeDirectories)" Condition="!exists(@(_IncludeDirectories))" />
+  </Target>
+
+  <Target Name="AnalyzeFileDependencies"
+    Inputs="@(SourceFiles)"
+    Outputs="$(IntermediateDir)%(SourceFiles.Identity).props"
+    DependsOnTargets="Initlilize">
+
+    <ItemGroup>
+      <_SourcesModified Include="%(SourceFiles.Identity)" /> 
+      <_SourcesModifiedMarkers Include="$(IntermediateDir)%(SourceFiles.Identity).marker" /> 
+    </ItemGroup>
+    <RunAnalyzer
+      AnalyzerPath="$(AnalyzerPath)"
+      SourceFiles="@(_SourcesModified)"
+      IncludeFiles="@(IncludeFiles)"
+    >
+      <Output TaskParameter="IncludeFilesWithDependents" ItemName="IncludeFilesWithDependents" />
+    </RunAnalyzer>
+    <Touch Files="@(_SourcesModifiedMarkers)" AlwaysCreate="true" />
+    <Touch Files="$(IntermediateDir)AnalyzeFileDependencies.marker" AlwaysCreate="true" />
+  </Target>
+
+  <Target Name="InvalidateSourcesWhenInlucesAreChanged"
+    Inputs="@(IncludeFilesWithDependents)"
+    Outputs="$(IntermediateDir)%(IncludeFilesWithDependents.Identity).marker"
+    DependsOnTargets="Initlilize;AnalyzeFileDependencies">
+
+    <ItemGroup>
+      <_IncludeFilesWithDependents Include="%(IncludeFilesWithDependents.SourceFileDependents)" />
+    </ItemGroup>
+
+    <Touch Files="@(_IncludeFilesWithDependents)" />
+    
+    <Touch Files="$(IntermediateDir)%(IncludeFilesWithDependents.Identity).marker"
+      AlwaysCreate="true">
+
+    </Touch>
+  </Target>
+
+  <!-- clean target -->
+  <Target Name="Clean">
+    <RemoveDir Directories="$(IntermediateDir)" />
+    <RemoveDir Directories="$(OutDir)" />
+  </Target>
+
+  <!-- Target to compile only the changed files without batching -->
+  <Target Name="Build" DependsOnTargets="Initlilize;AnalyzeFileDependencies;InvalidateSourcesWhenInlucesAreChanged"
+    Inputs="@(SourceFiles)"
+    Outputs="@(SourceFiles -> '$(Inter)%(Filename).dll')">
+
+    <!-- Clear output files -->
+    <!-- <Delete Files="@(SourceFiles -> '$(OutDir)%(Filename).dll')" /> -->
+
+    <!-- Only compile if there are changed files -->
+    <RunCompiler
+      CompilerPath="$(CompilerPath)"
+      OutputDirectory="$(OutDir)"
+      SourceFiles="@(SourceFiles)"
+      IncludeFiles="@(IncludeFiles)"
+    />
+
+  </Target>
+
+</Project>
